@@ -1,0 +1,25 @@
+# ==============================================================================
+# DJI Low-Latency Stream Hub - Git Ignore Configuration
+# ==============================================================================
+
+# Executable Dependency (Auto-downloaded at runtime by start-stream.ps1)
+mediamtx.exe
+mediamtx_windows_amd64.zip
+
+# Runtime Generated Configurations
+mediamtx.yml
+config.js
+
+# Compilation Temporary Artifacts
+LauncherTemp.cs
+
+# Local Compiled Binary (Distributed via GitHub Releases)
+DJI-Stream-Hub.exe
+
+# OS & IDE Files
+.vs/
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
+*.log

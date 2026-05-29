@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DJI Low-Latency Stream Hub</title>
+  
+  <!-- Fontes Premium de Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome para Ícones -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Arquivo de Configuração Dinâmica -->
+  <script src="config.js"></script>
+
+  <style>
+    /* ----------------------------------
+       SISTEMA DE DESIGN & VARIÁVEIS
+       ---------------------------------- */
+    :root {
+      --bg-dark: #08090c;
+      --bg-card: rgba(18, 20, 29, 0.65);
+      --bg-card-hover: rgba(26, 29, 41, 0.8);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(0, 242, 254, 0.25);
+      
+      /* Cores de Destaque */
+      --primary: #00f2fe;        /* Cyan neon */
+      --primary-glow: rgba(0, 242, 254, 0.4);
+      --secondary: #4facfe;      /* Azul elétrico */
+      --accent: #10b981;         /* Verde esmeralda (Conectado) */
+      --accent-glow: rgba(16, 185, 129, 0.3);
+      --warning: #f59e0b;        /* Amber (Aguardando) */
+      --warning-glow: rgba(245, 158, 11, 0.3);
+      --danger: #ef4444;         /* Vermelho (Desconectado) */
+      
+      /* Tipografia */
+      --font-display: 'Outfit', sans-serif;
+      --font-body: 'Inter', sans-serif;
+      --font-mono: 'Share Tech Mono', monospace;
+    }
+
+    /* ----------------------------------
+       RESET E ESTILOS GERAIS
+       ---------------------------------- */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(circle at 10% 20%, rgba(0, 242, 254, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(79, 172, 254, 0.05) 0%, transparent 40%),
+        linear-gradient(135deg, #090a0f 0%, #0d0f17 100%);
+      color: #e2e8f0;
+      font-family: var(--font-body);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Barra de Rolagem Customizada */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-dark);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--primary);
+    }
+
+    /* ----------------------------------
+       LAYOUT DO FLUXO PRINCIPAL
+       ---------------------------------- */
+    header {
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background: rgba(8, 9, 12, 0.75);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-icon {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--bg-dark);
+      font-size: 1.25rem;
+      box-shadow: 0 0 15px var(--primary-glow);
+    }
+
+    .brand-text h1 {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      background: linear-gradient(to right, #ffffff, #a5b4fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-text p {
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.4);
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .server-status {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      padding: 0.5rem 1rem;
+      border-radius: 50px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      color: var(--accent);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
+    }
+
+    .status-badge .dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--accent);
+      animation: pulse 1.5s infinite alternate;
+    }
+
+    .clock {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: rgba(255, 255, 255, 0.6);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    main {
+      flex: 1;
+      max-width: 1600px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 2rem;
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 1100px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ----------------------------------
+       SEÇÃO DO PLAYER (HUD ESTILO DRONE)
+       ---------------------------------- */
+    .viewport-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .hud-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      aspect-ratio: 16/9;
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hud-card:hover {
+      border-color: var(--border-hover);
+      box-shadow: 0 10px 40px rgba(0, 242, 254, 0.05);
+    }
+
+    /* Elementos Visuais do HUD do Drone */
+    .hud-corner {
+      position: absolute;
+      width: 15px;
+      height: 15px;
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      z-index: 10;
+      pointer-events: none;
+    }
+    .hud-corner.tl { top: 15px; left: 15px; border-right: none; border-bottom: none; }
+    .hud-corner.tr { top: 15px; right: 15px; border-left: none; border-bottom: none; }
+    .hud-corner.bl { bottom: 15px; left: 15px; border-right: none; border-top: none; }
+    .hud-corner.br { bottom: 15px; right: 15px; border-left: none; border-top: none; }
+
+    .hud-center {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      border: 1px dashed rgba(255, 255, 255, 0.15);
+      border-radius: 50%;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .hud-center::before {
+      content: '';
+      width: 6px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.3);
+    }
+    .hud-center::after {
+      content: '';
+      width: 1px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.3);
+      position: absolute;
+    }
+
+    .hud-overlay {
+      position: absolute;
+      top: 15px;
+      left: 40px;
+      right: 40px;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      z-index: 10;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.5);
+      letter-spacing: 1px;
+    }
+
+    /* Iframe do Player WebRTC */
+    .stream-iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #000;
+      z-index: 1;
+    }
+
+    /* Tela de Carregamento/Aguardando Sinal */
+    .stream-placeholder {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #0d0f16;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+      gap: 1.5rem;
+      text-align: center;
+    }
+
+    .radar-animation {
+      position: relative;
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 242, 254, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .radar-animation::before {
+      content: '';
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      border-top-color: var(--primary);
+      animation: rotate 2s linear infinite;
+    }
+    .radar-animation i {
+      font-size: 2rem;
+      color: var(--primary);
+      animation: pulse 1s infinite alternate;
+    }
+
+    .stream-placeholder h3 {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      letter-spacing: 1px;
+      color: #fff;
+    }
+    
+    .stream-placeholder p {
+      font-size: 0.85rem;
+      color: rgba(255, 255, 255, 0.4);
+      max-width: 320px;
+    }
+
+    /* Controles Extras da Viewport */
+    .viewport-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(18, 20, 29, 0.4);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 0.75rem 1.25rem;
+    }
+
+    .info-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    .info-group strong {
+      color: #fff;
+      font-family: var(--font-mono);
+    }
+
+    .control-buttons {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .btn-circle {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .btn-circle:hover {
+      background: var(--primary);
+      color: var(--bg-dark);
+      border-color: var(--primary);
+      box-shadow: 0 0 10px var(--primary-glow);
+    }
+
+    /* ----------------------------------
+       CONTEÚDO DIREITO (PAINEL INTERATIVO)
+       ---------------------------------- */
+    .control-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 500px;
+    }
+
+    .control-panel:hover {
+      border-color: var(--border-hover);
+    }
+
+    /* Navegação das Abas */
+    .tabs-header {
+      display: flex;
+      background: rgba(8, 9, 12, 0.4);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0.5rem 0.5rem 0 0.5rem;
+    }
+
+    .tab-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      padding: 1rem 0.5rem;
+      color: rgba(255, 255, 255, 0.4);
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border-radius: 10px 10px 0 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.25rem;
+      position: relative;
+    }
+
+    .tab-btn i {
+      font-size: 1.1rem;
+    }
+
+    .tab-btn.active {
+      color: var(--primary);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 15%;
+      width: 70%;
+      height: 3px;
+      background: linear-gradient(to right, var(--primary), var(--secondary));
+      border-radius: 5px 5px 0 0;
+    }
+
+    .tab-btn:hover:not(.active) {
+      color: #fff;
+    }
+
+    /* Conteúdo das Abas */
+    .tabs-content {
+      padding: 1.5rem;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .tab-pane {
+      display: none;
+      animation: fadeIn 0.3s ease-in-out;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    /* Elemento de Instrução RTMP */
+    .address-card {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+
+    .address-label {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      color: var(--primary);
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+      letter-spacing: 1px;
+    }
+
+    .address-value {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      color: #fff;
+      word-break: break-all;
+      padding-right: 2.5rem;
+    }
+
+    .btn-copy {
+      position: absolute;
+      right: 1.25rem;
+      bottom: 1.1rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      color: rgba(255, 255, 255, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .btn-copy:hover {
+      background: var(--primary);
+      color: var(--bg-dark);
+      border-color: var(--primary);
+    }
+
+    /* Listas de Passos Premium */
+    .steps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .step-item {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .step-number {
+      background: rgba(0, 242, 254, 0.1);
+      border: 1px solid rgba(0, 242, 254, 0.2);
+      width: 28px;
+      height: 28px;
+      min-width: 28px;
+      border-radius: 50%;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: bold;
+    }
+
+    .step-text h4 {
+      font-family: var(--font-display);
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+      color: #fff;
+    }
+
+    .step-text p {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.5);
+      line-height: 1.4;
+    }
+
+    .step-text code {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: #f3f4f6;
+    }
+
+    /* Cards de Diagnóstico & OBS */
+    .obs-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .obs-card h4 {
+      font-family: var(--font-display);
+      font-size: 0.95rem;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .obs-card h4 i {
+      color: var(--secondary);
+    }
+
+    .obs-card p {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.5);
+      line-height: 1.4;
+      margin-bottom: 1rem;
+    }
+
+    /* Grid de Portas Diagnóstico */
+    .diagnostic-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .port-item {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 0.75rem;
+      text-align: center;
+    }
+
+    .port-num {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: rgba(255, 255, 255, 0.4);
+      margin-bottom: 0.25rem;
+    }
+
+    .port-name {
+      font-family: var(--font-display);
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+
+    .port-status {
+      font-size: 0.65rem;
+      font-family: var(--font-mono);
+      font-weight: bold;
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .port-status.waiting {
+      color: var(--warning);
+    }
+
+    /* Checklist de Soluções */
+    .checklist {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .check-item {
+      display: flex;
+      gap: 0.75rem;
+      background: rgba(255, 255, 255, 0.01);
+      padding: 0.75rem;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.02);
+      align-items: flex-start;
+    }
+
+    .check-item i {
+      margin-top: 0.15rem;
+      font-size: 0.95rem;
+    }
+
+    .check-item i.fa-circle-question {
+      color: var(--secondary);
+    }
+
+    .check-text h5 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 0.15rem;
+    }
+
+    .check-text p {
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.4);
+      line-height: 1.3;
+    }
+
+    /* ----------------------------------
+       ANIMAÇÕES & TOAST
+       ---------------------------------- */
+    @keyframes rotate {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes pulse {
+      from { opacity: 0.5; }
+      to { opacity: 1; }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Notificação Toast */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: rgba(16, 185, 129, 0.9);
+      border: 1px solid var(--accent);
+      color: #fff;
+      padding: 0.75rem 1.5rem;
+      border-radius: 50px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      box-shadow: 0 10px 25px rgba(16, 185, 129, 0.3);
+      backdrop-filter: blur(10px);
+      transform: translateY(150%);
+      opacity: 0;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 1.5rem;
+      text-align: center;
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.3);
+      font-family: var(--font-mono);
+    }
+    footer a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* Estilos do Radar de Busca Premium & Painel de Telemetria */
+    .radar-animation {
+      position: relative;
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 242, 254, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 242, 254, 0.02);
+      box-shadow: 0 0 25px rgba(0, 242, 254, 0.05);
+    }
+    .radar-animation::before {
+      content: '';
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      border-top-color: var(--primary);
+      animation: rotate 2s linear infinite;
+    }
+    .radar-ping {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid var(--primary);
+      opacity: 0;
+      animation: ping-wave 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+    .radar-animation i {
+      font-size: 2.25rem !important;
+      color: var(--primary);
+      filter: drop-shadow(0 0 8px var(--primary-glow));
+      animation: pulse-scale 1.5s ease-in-out infinite alternate;
+      z-index: 2;
+    }
+    .status-info {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .status-title {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #fff;
+      text-shadow: 0 0 10px rgba(0, 242, 254, 0.2);
+    }
+    .status-subtitle {
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.4);
+      max-width: 320px;
+      margin-bottom: 0.5rem;
+      line-height: 1.4;
+    }
+    .telemetry-panel {
+      background: rgba(8, 9, 12, 0.5);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 0.75rem 1.25rem;
+      width: 300px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      backdrop-filter: blur(8px);
+      text-align: left;
+    }
+    .telemetry-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .telemetry-label {
+      color: rgba(255, 255, 255, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .telemetry-value {
+      font-weight: 600;
+    }
+    .text-accent {
+      color: var(--accent) !important;
+    }
+    .text-warning {
+      color: var(--warning) !important;
+    }
+    .pulsating-text {
+      animation: pulse-opacity 1.2s ease-in-out infinite alternate;
+    }
+
+    @keyframes ping-wave {
+      0% { transform: scale(1); opacity: 0.4; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+    @keyframes pulse-opacity {
+      from { opacity: 0.4; }
+      to { opacity: 1; }
+    }
+    @keyframes pulse-scale {
+      from { transform: scale(0.95); }
+      to { transform: scale(1.05); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- CABEÇALHO -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">
+        <i class="fa-solid fa-satellite-dish"></i>
+      </div>
+      <div class="brand-text">
+        <h1 id="header-title">DJI STREAM LINK</h1>
+      </div>
+    </div>
+    <div class="server-status">
+      <div class="status-badge">
+        <div class="dot"></div>
+        <span>SERVIDOR ONLINE</span>
+      </div>
+      <div class="clock" id="clock-display">
+        <i class="fa-regular fa-clock"></i>
+        <span>00:00:00</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- FLUXO PRINCIPAL -->
+  <main>
+    
+    <!-- ESQUERDA: VIEWPORT DO FEED (PLAYER) -->
+    <section class="viewport-container">
+      <div class="hud-card" id="player-hud">
+        
+        <!-- Elementos do HUD -->
+        <div class="hud-corner tl"></div>
+        <div class="hud-corner tr"></div>
+        <div class="hud-corner bl"></div>
+        <div class="hud-corner br"></div>
+        <div class="hud-center"></div>
+        
+        <div class="hud-overlay">
+          <span>LATENCY: ULTRA-LOW</span>
+          <span id="resolution-hud">1080P // H264</span>
+        </div>
+
+        <!-- Placeholder (Aguardando Sinal) -->
+        <div class="stream-placeholder" id="stream-loading">
+          <div class="radar-animation">
+            <i class="fa-solid fa-satellite-dish"></i>
+            <div class="radar-ping"></div>
+          </div>
+          <div class="status-info">
+            <h3 class="status-title">AGUARDANDO SINAL</h3>
+            <p class="status-subtitle">Inicie a transmissão RTMP no aplicativo DJI Fly do seu celular.</p>
+            
+            <div class="telemetry-panel">
+              <div class="telemetry-row">
+                <span class="telemetry-label"><i class="fa-solid fa-server"></i> Servidor RTMP:</span>
+                <span class="telemetry-value text-accent"><i class="fa-solid fa-circle-check"></i> ONLINE (1935)</span>
+              </div>
+              <div class="telemetry-row">
+                <span class="telemetry-label"><i class="fa-solid fa-network-wired"></i> Gateway WebRTC:</span>
+                <span class="telemetry-value text-accent"><i class="fa-solid fa-circle-check"></i> ONLINE (8889)</span>
+              </div>
+              <div class="telemetry-row">
+                <span class="telemetry-label"><i class="fa-solid fa-signal"></i> Status do Sinal:</span>
+                <span class="telemetry-value text-warning pulsating-text" id="telemetry-status-val"><i class="fa-solid fa-spinner fa-spin"></i> PROCURANDO...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Iframe do WebRTC do MediaMTX (Injetado via JS) -->
+        <div id="iframe-target" style="width: 100%; height: 100%; display: none; z-index: 1;"></div>
+
+      </div>
+
+      <!-- Controles Adicionais e Estatísticas -->
+      <div class="viewport-controls">
+        <div class="info-group">
+          <i class="fa-solid fa-wifi text-primary"></i>
+          <span>Rede Local IP: <strong id="ip-indicator">127.0.0.1</strong></span>
+        </div>
+        <div class="control-buttons">
+          <button class="btn-circle" title="Tentar Recarregar Vídeo" onclick="reloadStream()"><i class="fa-solid fa-rotate"></i></button>
+          <button class="btn-circle" title="Alternar Tela Cheia" onclick="toggleFullscreen()"><i class="fa-solid fa-expand"></i></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- DIREITA: PAINEL DE CONTROLE INTERATIVO -->
+    <section class="control-panel">
+      
+      <!-- Navegação Abas -->
+      <div class="tabs-header">
+        <button class="tab-btn active" onclick="switchTab(event, 'tab-fly')">
+          <i class="fa-solid fa-plane"></i>
+          <span>DJI Fly Setup</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-hotspot')">
+          <i class="fa-solid fa-wifi"></i>
+          <span>Hotspot Windows</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-obs')">
+          <i class="fa-solid fa-desktop"></i>
+          <span>Integração OBS</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab(event, 'tab-diag')">
+          <i class="fa-solid fa-circle-nodes"></i>
+          <span>Diagnóstico</span>
+        </button>
+      </div>
+
+      <!-- Conteúdo das Abas -->
+      <div class="tabs-content">
+        
+        <!-- ABA 1: CONFIGURAÇÃO DJI FLY -->
+        <div id="tab-fly" class="tab-pane active">
+          
+          <div class="address-card">
+            <div class="address-label">Endereço RTMP para o aplicativo DJI Fly</div>
+            <div class="address-value" id="rtmp-url-display">rtmp://127.0.0.1:1935/live/drone</div>
+            <button class="btn-copy" onclick="copyText('rtmp-url-display')" title="Copiar endereço"><i class="fa-regular fa-copy"></i></button>
+          </div>
+
+          <div class="steps-list">
+            <div class="step-item">
+              <div class="step-number">1</div>
+              <div class="step-text">
+                <h4>Conecte na mesma Rede Local</h4>
+                 <p>Certifique-se de que o seu celular (conectado ao RC-N1) está na mesma rede do seu computador. A forma mais rápida e com menor atraso é habilitar o <strong>Hotspot Móvel do Windows</strong>. Se você executou o script como Administrador, o hotspot já foi configurado automaticamente com o nome <strong>DJI-Stream-Hub</strong> e a senha <strong>djidrone123</strong>!</p>
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-number">2</div>
+              <div class="step-text">
+                <h4>Acesse as Configurações de Transmissão</h4>
+                <p>No aplicativo <strong>DJI Fly</strong> (com o drone ligado e a câmera transmitindo), toque nos <strong>3 pontinhos (...)</strong> no canto superior direito > vá na aba <strong>Transmissão (Transmission)</strong> > toque em <strong>Plataformas de Transmissão ao Vivo (Live Streaming Platforms)</strong>.</p>
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-number">3</div>
+              <div class="step-text">
+                <h4>Selecione RTMP e Cole o Endereço</h4>
+                <p>Selecione <strong>RTMP</strong>. No campo de texto, digite ou cole o endereço azul exibido acima. Escolha a resolução desejada (720p ou 1080p) e a taxa de bits (Auto ou 3/4 Mbps) e confirme.</p>
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-number">4</div>
+              <div class="step-text">
+                <h4>Aproveite a Latência Zero</h4>
+                <p>Toque em <strong>Iniciar Transmissão</strong>. O status no DJI Fly ficará azul/verde e o player ao lado começará a exibir a imagem do drone em menos de 1 segundo.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ABA 2: CONFIGURAÇÃO DO HOTSPOT WINDOWS -->
+        <div id="tab-hotspot" class="tab-pane">
+          
+          <div class="obs-card">
+            <h4><i class="fa-solid fa-bolt" style="color: var(--primary);"></i> Por que usar o Hotspot Móvel?</h4>
+            <p>O Hotspot Móvel do Windows cria uma <strong>conexão direta ponto a ponto (peer-to-peer)</strong> entre o celular e o computador via Wi-Fi, sem passar pelo roteador da sua casa. Isso traz vantagens cruciais:</p>
+            <div class="diagnostic-grid" style="margin-bottom: 0.5rem; grid-template-columns: repeat(2, 1fr);">
+              <div class="port-item" style="padding: 0.75rem; text-align: left; display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fa-solid fa-gauge-high" style="color: var(--primary); font-size: 1.25rem;"></i>
+                <div>
+                  <div style="font-size: 0.75rem; font-weight: bold; color: #fff;">Delay Mínimo</div>
+                  <div style="font-size: 0.65rem; color: rgba(255,255,255,0.4);">Menos de 1ms de tráfego de rede local</div>
+                </div>
+              </div>
+              <div class="port-item" style="padding: 0.75rem; text-align: left; display: flex; align-items: center; gap: 0.5rem;">
+                <i class="fa-solid fa-cloud-sun" style="color: var(--accent); font-size: 1.25rem;"></i>
+                <div>
+                  <div style="font-size: 0.75rem; font-weight: bold; color: #fff;">100% Offline</div>
+                  <div style="font-size: 0.65rem; color: rgba(255,255,255,0.4);">Funciona no campo ou áreas sem internet</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="obs-card">
+            <h4><i class="fa-solid fa-circle-play" style="color: var(--accent);"></i> Opção A: Configuração Automática (Recomendado)</h4>
+            <p>A melhor forma de iniciar é deixar o script configurar tudo sozinho. Para isso, você deve executar o script como <strong>Administrador</strong>:</p>
+            <div class="steps-list" style="gap: 0.75rem;">
+              <div class="step-item">
+                <div class="step-number" style="width: 20px; height: 20px; min-width: 20px; font-size: 0.7rem;">1</div>
+                <div class="step-text">
+                  <p>Feche esta janela do navegador e pare o script atual pressionando <code>Ctrl + C</code> no console.</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <div class="step-number" style="width: 20px; height: 20px; min-width: 20px; font-size: 0.7rem;">2</div>
+                <div class="step-text">
+                  <p>Clique com o botão direito no menu Iniciar do Windows e selecione <strong>Terminal (Administrador)</strong> ou <strong>PowerShell (Administrador)</strong>.</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <div class="step-number" style="width: 20px; height: 20px; min-width: 20px; font-size: 0.7rem;">3</div>
+                <div class="step-text">
+                  <p>Execute novamente o script nesta nova janela com privilégios:</p>
+                  <code style="display: block; margin: 0.25rem 0; padding: 0.4rem; background: rgba(0,0,0,0.4); text-align: center; border-radius: 6px; font-family: var(--font-mono); font-size: 0.75rem;">.\start-stream.ps1</code>
+                </div>
+              </div>
+            </div>
+            <p style="font-size: 0.75rem; color: var(--primary); margin-top: 0.75rem; font-weight: 600;">
+              <i class="fa-solid fa-circle-check"></i> Pronto! O script criará a rede Wi-Fi <strong>DJI-Stream-Hub</strong> com a senha <strong>djidrone123</strong> e a ativará automaticamente.
+            </p>
+          </div>
+
+          <div class="obs-card">
+            <h4><i class="fa-solid fa-sliders" style="color: var(--secondary);"></i> Opção B: Configuração Manual</h4>
+            <p>Caso prefira configurar manualmente através do painel de controle nativo do Windows:</p>
+            <div class="steps-list" style="gap: 0.75rem;">
+              <div class="step-item">
+                <div class="step-number" style="width: 20px; height: 20px; min-width: 20px; font-size: 0.7rem;">1</div>
+                <div class="step-text">
+                  <p>Pressione as teclas <code>Win + I</code> para abrir as <strong>Configurações do Windows</strong>.</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <div class="step-number" style="width: 20px; height: 20px; min-width: 20px; font-size: 0.7rem;">2</div>
+                <div class="step-text">
+                  <p>Acesse <strong>Rede e Internet</strong> e selecione a opção <strong>Hotspot Móvel</strong>.</p>
+                </div>
+              </div>
+              <div class="step-item">
+                <div class="step-number" style="width: 20px; height: 20px; min-width: 20px; font-size: 0.7rem;">3</div>
+                <div class="step-text">
+                  <p>Clique em <strong>Propriedades / Editar</strong> e defina o nome (SSID) para <code>DJI-Stream-Hub</code> e a senha para <code>djidrone123</code>. Salve e ative a chave no topo da tela.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="obs-card">
+            <h4><i class="fa-solid fa-circle-exclamation" style="color: var(--warning);"></i> Dica de Ouro: Evite Desconexões</h4>
+            <p>Por padrão, o Windows desativa o Hotspot Móvel se nenhum dispositivo estiver conectado por alguns minutos. Para desativar esse comportamento:</p>
+            <div class="check-item" style="background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.15); margin-top: 0.5rem; padding: 0.75rem;">
+              <i class="fa-solid fa-battery-half" style="color: var(--warning); margin-top: 0.1rem;"></i>
+              <div class="check-text">
+                <h5 style="color: #fff; font-size: 0.75rem; font-weight: bold; margin-bottom: 0.15rem;">Desative a Economia de Energia</h5>
+                <p style="color: rgba(255,255,255,0.6); font-size: 0.7rem; line-height: 1.3;">
+                  Nas configurações do <strong>Hotspot Móvel</strong> do Windows, role a página até o fim e desmarque a opção <strong>"Economia de Energia"</strong> (ou "Desativar o hotspot quando nenhum dispositivo estiver conectado").
+                </p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ABA 3: INTEGRAÇÃO OBS STUDIO -->
+        <div id="tab-obs" class="tab-pane">
+          
+          <div class="obs-card">
+            <h4><i class="fa-solid fa-satellite-dish"></i> Método A: Navegador WebRTC (Menor Latência)</h4>
+            <p>Ideal para latência mínima absoluta no OBS (sub-300ms). Utiliza a engine de navegação embutida do OBS Studio.</p>
+            <div class="address-card" style="margin-bottom: 0.75rem;">
+              <div class="address-label">Link para Fonte de Navegador do OBS</div>
+              <div class="address-value" id="obs-webrtc-url">http://127.0.0.1:8889/live/drone</div>
+              <button class="btn-copy" onclick="copyText('obs-webrtc-url')" title="Copiar endereço"><i class="fa-regular fa-copy"></i></button>
+            </div>
+            <p style="font-size: 0.75rem; color: rgba(255,255,255,0.4);">
+              <strong>Como adicionar:</strong> No OBS, clique no botão <code>+</code> sob Fontes > selecione <strong>Navegador (Browser)</strong> > Cole este link e configure o tamanho para <code>1920 x 1080</code> (ou <code>1280 x 720</code>).
+            </p>
+          </div>
+
+          <div class="obs-card">
+            <h4><i class="fa-solid fa-video"></i> Método B: Fonte de Mídia RTSP (Super Estável)</h4>
+            <p>Excelente estabilidade e compatibilidade de frames. Roda direto sobre o protocolo UDP na sua rede local.</p>
+            <div class="address-card" style="margin-bottom: 0.75rem;">
+              <div class="address-label">Endereço RTSP local para o OBS</div>
+              <div class="address-value" id="obs-rtsp-url">rtsp://127.0.0.1:8554/live/drone</div>
+              <button class="btn-copy" onclick="copyText('obs-rtsp-url')" title="Copiar endereço"><i class="fa-regular fa-copy"></i></button>
+            </div>
+            <p style="font-size: 0.75rem; color: rgba(255,255,255,0.4);">
+              <strong>Como adicionar:</strong> No OBS, clique no botão <code>+</code> sob Fontes > selecione <strong>Fonte de Mídia (Media Source)</strong> > Desmarque "Arquivo Local" > Cole este link no campo "Entrada" > No campo "Opções de Entrada", digite <code>rtsp_transport=udp</code> para otimizar.
+            </p>
+          </div>
+
+        </div>
+
+        <!-- ABA 3: DIAGNÓSTICO -->
+        <div id="tab-diag" class="tab-pane">
+          
+          <div class="diagnostic-grid">
+            <div class="port-item">
+              <div class="port-num">1935</div>
+              <div class="port-name">RTMP Ingest</div>
+              <div class="port-status"><i class="fa-solid fa-circle-check"></i> ATIVO</div>
+            </div>
+            <div class="port-item">
+              <div class="port-num">8889</div>
+              <div class="port-name">WebRTC</div>
+              <div class="port-status"><i class="fa-solid fa-circle-check"></i> ATIVO</div>
+            </div>
+            <div class="port-item">
+              <div class="port-num">8554</div>
+              <div class="port-name">RTSP Feed</div>
+              <div class="port-status"><i class="fa-solid fa-circle-check"></i> ATIVO</div>
+            </div>
+          </div>
+
+          <div class="checklist">
+            <h4 style="font-family: var(--font-display); font-size: 0.9rem; color: #fff; margin-bottom: 0.25rem;">Solução de Problemas Comuns</h4>
+            
+            <div class="check-item">
+              <i class="fa-regular fa-circle-question"></i>
+              <div class="check-text">
+                <h5>O feed do drone não carrega no painel</h5>
+                <p>Verifique se o seu celular está de fato na mesma rede Wi-Fi que o PC. Em redes corporativas ou roteadores com "Isolamento AP" habilitado, a comunicação direta é bloqueada. Use a função de Hotspot do Windows.</p>
+              </div>
+            </div>
+
+            <div class="check-item">
+              <i class="fa-regular fa-circle-question"></i>
+              <div class="check-text">
+                <h5>Erro de timeout ao iniciar a stream no DJI Fly</h5>
+                <p>O Firewall do Windows pode estar bloqueando a porta 1935 (RTMP). Verifique o alerta do firewall que aparece ao iniciar o script e clique em "Permitir Acesso", ou certifique-se de configurar a rede como "Privada".</p>
+              </div>
+            </div>
+
+            <div class="check-item">
+              <i class="fa-regular fa-circle-question"></i>
+              <div class="check-text">
+                <h5>O vídeo tem pequenas engasgadas</h5>
+                <p>A taxa de bits (bitrate) pode estar muito alta para o sinal da sua rede Wi-Fi. No aplicativo DJI Fly, reduza o bitrate da transmissão de 1080p para 720p ou defina o bitrate para manual em 3 Mbps para maior estabilidade física.</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- NOTIFICAÇÃO TOAST -->
+  <div id="copy-toast" class="toast">
+    <i class="fa-solid fa-circle-check"></i>
+    <span>Endereço copiado para a área de transferência!</span>
+  </div>
+
+  <!-- RODAPÉ -->
+  <footer>
+    DJI Stream Link &copy; 2026. Todos os direitos reservados.
+  </footer>
+
+  <!-- SCRIPT DE INTERAÇÕES E LÓGICA -->
+  <script>
+    // Configurações Globais / Injeção dinâmica de IP
+    let localIp = "127.0.0.1";
+    let webrtcPort = 8889;
+    let rtmpPort = 1935;
+    let rtspPort = 8554;
+    let streamPath = "live/drone";
+
+    // 1. Carrega as variáveis do config.js (gerado dinamicamente pelo script do powershell)
+    function applyConfig() {
+      if (typeof STREAM_CONFIG !== "undefined") {
+        localIp = STREAM_CONFIG.localIp || "127.0.0.1";
+        webrtcPort = STREAM_CONFIG.webrtcPort || 8889;
+        rtmpPort = STREAM_CONFIG.rtmpPort || 1935;
+        rtspPort = STREAM_CONFIG.rtspPort || 8554;
+        streamPath = STREAM_CONFIG.streamPath || "live/drone";
+        
+        // Atualiza textos
+        document.getElementById("ip-indicator").textContent = localIp;
+        
+        // Atualiza links mostrados nas abas
+        if (STREAM_CONFIG.ngrokUrl) {
+          document.getElementById("rtmp-url-display").textContent = STREAM_CONFIG.ngrokUrl;
+        } else {
+          document.getElementById("rtmp-url-display").textContent = `rtmp://${localIp}:${rtmpPort}/${streamPath}`;
+        }
+        document.getElementById("obs-webrtc-url").textContent = `http://${localIp}:${webrtcPort}/${streamPath}`;
+        document.getElementById("obs-rtsp-url").textContent = `rtsp://${localIp}:${rtspPort}/${streamPath}`;
+      }
+    }
+
+    let isStreamActive = false;
+
+    // 2. Verifica se a transmissão está ativa enviando uma requisição OPTIONS leve ao endpoint WHEP do MediaMTX.
+    // Se o drone não estiver transmitindo, o MediaMTX retornará 404. Se estiver, retornará outro status (200, 204 ou 405), mas NÃO 404.
+    async function checkStreamStatus() {
+      const streamPathEncoded = encodeURIComponent(streamPath);
+      const apiUrl = `http://${localIp}:9997/v3/paths/get/${streamPathEncoded}`;
+      try {
+        const response = await fetch(apiUrl);
+        if (response.status === 200) {
+          const data = await response.json();
+          // 'ready' indica se há um publicador ativo enviando vídeo para o caminho
+          return data.ready === true;
+        }
+        return false;
+      } catch (e) {
+        // Falha de rede (ex: MediaMTX desligado) -> Trata como offline
+        return false;
+      }
+    }
+
+    // 3. Atualiza dinamicamente a interface com base no status do sinal detectado
+    async function updateStreamUI() {
+      const active = await checkStreamStatus();
+      const container = document.getElementById("iframe-target");
+      const placeholder = document.getElementById("stream-loading");
+      const statusBadge = document.querySelector(".status-badge");
+      const statusBadgeDot = statusBadge.querySelector(".dot");
+      const statusBadgeText = statusBadge.querySelector("span");
+      const telemetryStatus = document.getElementById("telemetry-status-val");
+      
+      if (active) {
+        // Sinal ATIVO!
+        if (!isStreamActive) {
+          isStreamActive = true;
+          console.log("-> Transmissão do drone detectada! Iniciando player WebRTC...");
+          
+          // Injeta o iframe limpo
+          const playerUrl = `http://${localIp}:${webrtcPort}/${streamPath}`;
+          container.innerHTML = `
+            <iframe 
+              id="webrtc-iframe"
+              class="stream-iframe" 
+              src="${playerUrl}" 
+              allow="autoplay; fullscreen"
+              onload="onIframeLoaded()"
+            ></iframe>
+          `;
+          
+          // Transição visual suave
+          placeholder.style.opacity = "0";
+          setTimeout(() => {
+            placeholder.style.display = "none";
+            container.style.display = "block";
+            container.style.opacity = "1";
+          }, 300);
+        }
+        
+        // Atualiza Badge do Cabeçalho -> ATIVO (Verde)
+        statusBadge.style.background = "rgba(16, 185, 129, 0.1)";
+        statusBadge.style.borderColor = "rgba(16, 185, 129, 0.25)";
+        statusBadgeDot.style.backgroundColor = "var(--accent)";
+        statusBadgeDot.style.boxShadow = "0 0 10px var(--accent)";
+        statusBadgeText.textContent = "TRANSMISSÃO ATIVA";
+        statusBadgeText.style.color = "var(--accent)";
+      } else {
+        // Aguardando Sinal (OFFLINE)
+        if (isStreamActive || container.innerHTML.trim() === "") {
+          isStreamActive = false;
+          console.log("-> Drone offline ou sinal perdido. Exibindo telemetria de busca...");
+          
+          // Limpa o iframe para cessar conexões/erros em segundo plano e prevenir áudio fantasma
+          container.style.opacity = "0";
+          setTimeout(() => {
+            container.style.display = "none";
+            container.innerHTML = "";
+            placeholder.style.display = "flex";
+            placeholder.style.opacity = "1";
+          }, 300);
+        }
+        
+        // Atualiza Texto da Telemetria de Busca no HUD
+        if (telemetryStatus) {
+          telemetryStatus.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> PROCURANDO...`;
+        }
+        
+        // Atualiza Badge do Cabeçalho -> AGUARDANDO (Amber)
+        statusBadge.style.background = "rgba(245, 158, 11, 0.1)";
+        statusBadge.style.borderColor = "rgba(245, 158, 11, 0.25)";
+        statusBadgeDot.style.backgroundColor = "var(--warning)";
+        statusBadgeDot.style.boxShadow = "0 0 10px var(--warning)";
+        statusBadgeText.textContent = "AGUARDANDO DRONE";
+        statusBadgeText.style.color = "var(--warning)";
+      }
+    }
+
+    function onIframeLoaded() {
+      console.log("Iframe do reprodutor WebRTC carregado com sucesso!");
+    }
+
+    // Recarregar stream manualmente (força uma verificação de UI instantânea)
+    function reloadStream() {
+      updateStreamUI();
+    }
+
+    // Alternar abas
+    function switchTab(evt, tabId) {
+      // Esconder todos os painéis de abas
+      const tabPanes = document.getElementsByClassName("tab-pane");
+      for (let i = 0; i < tabPanes.length; i++) {
+        tabPanes[i].classList.remove("active");
+      }
+
+      // Remover classe active de todos os botões
+      const tabBtns = document.getElementsByClassName("tab-btn");
+      for (let i = 0; i < tabBtns.length; i++) {
+        tabBtns[i].classList.remove("active");
+      }
+
+      // Mostrar aba ativa
+      document.getElementById(tabId).classList.add("active");
+      evt.currentTarget.classList.add("active");
+    }
+
+    // Copiar link para área de transferência
+    function copyText(elementId) {
+      const textToCopy = document.getElementById(elementId).textContent;
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        showToast();
+      }).catch(err => {
+        console.error("Falha ao copiar texto: ", err);
+      });
+    }
+
+    // Exibir notificação Toast
+    function showToast() {
+      const toast = document.getElementById("copy-toast");
+      toast.classList.add("show");
+      setTimeout(() => {
+        toast.classList.remove("show");
+      }, 3000);
+    }
+
+    // Alternar Tela Cheia para o player do drone
+    function toggleFullscreen() {
+      const elem = document.getElementById("player-hud");
+      if (!document.fullscreenElement) {
+        if (elem.requestFullscreen) {
+          elem.requestFullscreen();
+        } else if (elem.webkitRequestFullscreen) { /* Safari */
+          elem.webkitRequestFullscreen();
+        } else if (elem.msRequestFullscreen) { /* IE11 */
+          elem.msRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    // Relógio no cabeçalho
+    function updateClock() {
+      const clockElem = document.getElementById("clock-display").querySelector("span");
+      const now = new Date();
+      const timeStr = now.toTimeString().split(' ')[0];
+      clockElem.textContent = timeStr;
+    }
+
+    // Inicialização
+    window.addEventListener("DOMContentLoaded", () => {
+      applyConfig();
+      updateClock();
+      setInterval(updateClock, 1000);
+      
+      // Inicia a verificação periódica do status do sinal (polling a cada 2 segundos)
+      updateStreamUI();
+      setInterval(updateStreamUI, 2000);
+    });
+  </script>
+</body>
+</html>

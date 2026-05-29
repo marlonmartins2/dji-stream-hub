@@ -1,0 +1,19 @@
+# MediaMTX configuration v1.18.2 for DJI Low-Latency Stream
+logLevel: info
+logDestinations: [stdout]
+
+# Listeners
+rtspAddress: :8554
+rtmpAddress: :1935
+webrtcAddress: :8889
+
+# REST API
+api: yes
+apiAddress: :9997
+
+# WebRTC specific
+webrtcEncryption: false
+
+# Path configuration (Allow all paths)
+paths:
+  all:
