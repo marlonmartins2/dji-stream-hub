@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # Monitora e atualiza as ações do GitHub (CI/CD) semanalmente
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
