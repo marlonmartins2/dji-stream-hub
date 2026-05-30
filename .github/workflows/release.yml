@@ -1,0 +1,82 @@
+name: Publish Release Binary 🚀
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Compile & Publish Release
+    runs-on: windows-latest
+    
+    # Executa apenas se o commit não for um commit de configuração de CI (evitando loops de documentação)
+    if: "!contains(github.event.head_commit.message, 'skip-release')"
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Compile Windows Launcher Binary (.EXE)
+      shell: powershell
+      run: |
+        # Cria um logo.png de backup caso não exista para evitar falhas de compilação
+        if (-not (Test-Path "logo.png")) {
+            New-Item -ItemType File -Path "logo.png" -Force
+        }
+        
+        # Executa o script de compilação C#
+        .\compile-launcher.ps1
+        
+        # Verifica se o arquivo final foi compilado com sucesso
+        if (-not (Test-Path "DJI-Stream-Hub.exe")) {
+            Write-Error "Error: Failed to compile DJI-Stream-Hub.exe binary!"
+            exit 1
+        }
+        Write-Host "Success: DJI-Stream-Hub.exe compiled successfully!"
+
+    - name: Generate Dynamic Version Tag
+      id: get_version
+      shell: powershell
+      run: |
+        # Define uma tag de versão incremental baseada no número de execuções do CI
+        $version = "v1.0.${{ github.run_number }}"
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        Write-Host "Generated Version Tag: $version"
+
+    - name: Create GitHub Release and Upload Assets
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.get_version.outputs.version }}
+        name: DJI Stream Hub ${{ steps.get_version.outputs.version }} 🚀
+        draft: false
+        prerelease: false
+        token: ${{ secrets.GITHUB_TOKEN }}
+        body: |
+          ## DJI Stream Hub - Release ${{ steps.get_version.outputs.version }} 🚀
+          
+          Esta é uma versão compilada de forma 100% automatizada a partir do merge na branch principal.
+          
+          ### 📦 O que há de novo:
+          * **Ultima mensagem de commit:** `${{ github.event.head_commit.message }}`
+          * Compilação nativa Windows x64.
+          * Ecossistema MediaMTX e WebRTC integrados de forma portátil.
+          
+          ### ⚡ Instruções de Instalação:
+          1. Baixe o executável **`DJI-Stream-Hub.exe`** listado nos Assets abaixo.
+          2. Coloque-o em uma pasta exclusiva no seu computador Windows.
+          3. Dê um duplo clique para iniciar a transmissão local instantânea!
+          
+          ---
+          *Build ID: ${{ github.run_id }}*
+        files: |
+          DJI-Stream-Hub.exe
