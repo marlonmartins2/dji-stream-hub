@@ -24,7 +24,7 @@ jobs:
         fetch-depth: 0
 
     - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
+      uses: microsoft/setup-msbuild@v3
 
     - name: Compile Windows Launcher Binary (.EXE)
       shell: powershell
