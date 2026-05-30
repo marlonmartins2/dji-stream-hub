@@ -29,18 +29,18 @@ jobs:
     - name: Compile Launcher Check
       shell: powershell
       run: |
-        # Cria um arquivo temporário logo.png para simular os assets e evitar falhas de compilação por falta do arquivo
+        # Create a mock logo.png file to avoid compilation errors due to missing assets
         if (-not (Test-Path "logo.png")) {
             New-Item -ItemType File -Path "logo.png" -Force
         }
         
-        # Executa o compilador
+        # Execute the compiler script
         .\compile-launcher.ps1
         
-        # Verifica se o binário compilado (.exe) foi gerado com sucesso no Runner do Windows
+        # Verify if the compiled executable was successfully generated
         if (Test-Path "DJI-Stream-Hub.exe") {
-            Write-Host "✔ Sucesso: O executável DJI-Stream-Hub.exe foi compilado com sucesso!"
+            Write-Host "Success: DJI-Stream-Hub.exe was compiled successfully!"
         } else {
-            Write-Error "✖ Erro: Falha ao compilar o executável do Launcher!"
+            Write-Error "Error: Failed to compile the Launcher executable!"
             exit 1
         }
