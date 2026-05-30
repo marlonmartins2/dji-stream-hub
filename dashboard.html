@@ -904,6 +904,9 @@
         
         <div class="hud-overlay">
           <span>LATENCY: ULTRA-LOW</span>
+          <div id="hud-recording-badge" style="display: none; align-items: center; gap: 0.35rem; color: #ef4444; font-family: var(--font-mono); font-weight: bold; animation: pulse-opacity 1s infinite alternate;">
+            <i class="fa-solid fa-circle" style="font-size: 0.6rem;"></i> REC <span id="hud-record-timer">00:00</span>
+          </div>
           <span id="resolution-hud">1080P // H264</span>
         </div>
 
@@ -934,8 +937,10 @@
           </div>
         </div>
 
-        <!-- Iframe do WebRTC do MediaMTX (Injetado via JS) -->
-        <div id="iframe-target" style="width: 100%; height: 100%; display: none; z-index: 1;"></div>
+        <!-- Player WebRTC Nativo (Conectado via WHEP / JS) -->
+        <div id="player-container" style="width: 100%; height: 100%; display: none; z-index: 1; position: relative;">
+          <video id="webrtc-video" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: contain; background: #000; border-radius: 16px;"></video>
+        </div>
 
       </div>
 
@@ -946,6 +951,10 @@
           <span>Rede Local IP: <strong id="ip-indicator">127.0.0.1</strong></span>
         </div>
         <div class="control-buttons">
+          <button class="btn-circle" id="btn-record" title="Gravar Voo (Local)" onclick="toggleRecording()" style="position: relative;">
+            <i class="fa-solid fa-circle" id="record-icon" style="color: #ef4444;"></i>
+            <span id="record-timer" style="display: none; position: absolute; top: -20px; font-size: 0.65rem; font-family: var(--font-mono); background: rgba(8,9,12,0.9); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--danger); color: #ef4444; font-weight: bold; white-space: nowrap; z-index: 100;">00:00</span>
+          </button>
           <button class="btn-circle" title="Tentar Recarregar Vídeo" onclick="reloadStream()"><i class="fa-solid fa-rotate"></i></button>
           <button class="btn-circle" title="Alternar Tela Cheia" onclick="toggleFullscreen()"><i class="fa-solid fa-expand"></i></button>
         </div>
@@ -1222,6 +1231,16 @@
     let rtspPort = 8554;
     let streamPath = "live/drone";
 
+    let peerConnection = null;
+    let isStreamActive = false;
+
+    // Variáveis do Gravador de Voo (Local Web-Recorder)
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let isRecording = false;
+    let recordTimerInterval = null;
+    let recordSeconds = 0;
+
     // 1. Carrega as variáveis do config.js (gerado dinamicamente pelo script do powershell)
     function applyConfig() {
       if (typeof STREAM_CONFIG !== "undefined") {
@@ -1245,10 +1264,84 @@
       }
     }
 
-    let isStreamActive = false;
+    // 2. Conecta ao fluxo WebRTC usando o protocolo WHEP (WebRTC HTTP Egress Protocol) nativo
+    async function startWebRTCPlayer(ip, port, path) {
+      const video = document.getElementById("webrtc-video");
+      const whepUrl = `http://${ip}:${port}/${path}/whep`;
 
-    // 2. Verifica se a transmissão está ativa enviando uma requisição OPTIONS leve ao endpoint WHEP do MediaMTX.
-    // Se o drone não estiver transmitindo, o MediaMTX retornará 404. Se estiver, retornará outro status (200, 204 ou 405), mas NÃO 404.
+      console.log(`-> Conectando ao WHEP Endpoint: ${whepUrl}`);
+      
+      // Fecha qualquer conexão anterior para evitar vazamento de memória e conflitos
+      if (peerConnection) {
+        try {
+          peerConnection.close();
+        } catch (e) {}
+      }
+
+      // Inicializa a conexão WebRTC padrão
+      peerConnection = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      });
+
+      // Configura a conexão para receber áudio e vídeo
+      peerConnection.addTransceiver('video', { direction: 'recvonly' });
+      peerConnection.addTransceiver('audio', { direction: 'recvonly' });
+
+      // Quando o fluxo de mídia chegar do MediaMTX, injeta na tag <video> local
+      peerConnection.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+          console.log("-> Track de vídeo WebRTC recebido com sucesso!");
+          video.srcObject = event.streams[0];
+        }
+      };
+
+      try {
+        // Cria a oferta de SDP local
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+
+        // Envia a oferta para o MediaMTX via POST HTTP (Protocolo WHEP)
+        const response = await fetch(whepUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/sdp' },
+          body: offer.sdp
+        });
+
+        if (!response.ok) {
+          throw new Error(`Erro na negociação SDP. Status: ${response.status}`);
+        }
+
+        // Recebe a resposta SDP do servidor e finaliza a conexão
+        const answerSdp = await response.text();
+        await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+        console.log("✔ Conexão WebRTC WHEP estabelecida com sucesso!");
+      } catch (err) {
+        console.error("✖ Erro ao negociar conexão WebRTC:", err);
+      }
+    }
+
+    // 3. Para o player e libera os recursos do navegador
+    function stopWebRTCPlayer() {
+      const video = document.getElementById("webrtc-video");
+      
+      // Para a gravação antes se estiver ativa
+      if (isRecording) {
+        stopRecording();
+      }
+
+      if (video) {
+        video.srcObject = null;
+      }
+      if (peerConnection) {
+        try {
+          peerConnection.close();
+        } catch (e) {}
+        peerConnection = null;
+      }
+      console.log("-> Conexão WebRTC fechada.");
+    }
+
+    // 4. Verifica se a transmissão está ativa enviando uma requisição OPTIONS leve ao endpoint WHEP do MediaMTX.
     async function checkStreamStatus() {
       const streamPathEncoded = encodeURIComponent(streamPath);
       const apiUrl = `http://${localIp}:9997/v3/paths/get/${streamPathEncoded}`;
@@ -1256,20 +1349,18 @@
         const response = await fetch(apiUrl);
         if (response.status === 200) {
           const data = await response.json();
-          // 'ready' indica se há um publicador ativo enviando vídeo para o caminho
           return data.ready === true;
         }
         return false;
       } catch (e) {
-        // Falha de rede (ex: MediaMTX desligado) -> Trata como offline
         return false;
       }
     }
 
-    // 3. Atualiza dinamicamente a interface com base no status do sinal detectado
+    // 5. Atualiza dinamicamente a interface com base no status do sinal detectado
     async function updateStreamUI() {
       const active = await checkStreamStatus();
-      const container = document.getElementById("iframe-target");
+      const container = document.getElementById("player-container");
       const placeholder = document.getElementById("stream-loading");
       const statusBadge = document.querySelector(".status-badge");
       const statusBadgeDot = statusBadge.querySelector(".dot");
@@ -1280,19 +1371,10 @@
         // Sinal ATIVO!
         if (!isStreamActive) {
           isStreamActive = true;
-          console.log("-> Transmissão do drone detectada! Iniciando player WebRTC...");
+          console.log("-> Transmissão do drone detectada! Iniciando player WebRTC Nativo...");
           
-          // Injeta o iframe limpo
-          const playerUrl = `http://${localIp}:${webrtcPort}/${streamPath}`;
-          container.innerHTML = `
-            <iframe 
-              id="webrtc-iframe"
-              class="stream-iframe" 
-              src="${playerUrl}" 
-              allow="autoplay; fullscreen"
-              onload="onIframeLoaded()"
-            ></iframe>
-          `;
+          // Inicia o player nativo WHEP WebRTC
+          startWebRTCPlayer(localIp, webrtcPort, streamPath);
           
           // Transição visual suave
           placeholder.style.opacity = "0";
@@ -1312,15 +1394,17 @@
         statusBadgeText.style.color = "var(--accent)";
       } else {
         // Aguardando Sinal (OFFLINE)
-        if (isStreamActive || container.innerHTML.trim() === "") {
+        if (isStreamActive) {
           isStreamActive = false;
-          console.log("-> Drone offline ou sinal perdido. Exibindo telemetria de busca...");
+          console.log("-> Drone offline ou sinal perdido. Parando player...");
           
-          // Limpa o iframe para cessar conexões/erros em segundo plano e prevenir áudio fantasma
+          // Para o player e encerra qualquer gravação ativa
+          stopWebRTCPlayer();
+          
+          // Transição visual de volta ao placeholder
           container.style.opacity = "0";
           setTimeout(() => {
             container.style.display = "none";
-            container.innerHTML = "";
             placeholder.style.display = "flex";
             placeholder.style.opacity = "1";
           }, 300);
@@ -1341,8 +1425,139 @@
       }
     }
 
-    function onIframeLoaded() {
-      console.log("Iframe do reprodutor WebRTC carregado com sucesso!");
+    // 6. GERENCIAMENTO DA GRAVAÇÃO LOCAL (Local Web-Recorder)
+    function toggleRecording() {
+      if (!isStreamActive) {
+        alert("Erro: Nenhuma transmissão de vídeo ativa para gravar no momento!");
+        return;
+      }
+      
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+
+    function startRecording() {
+      const video = document.getElementById("webrtc-video");
+      if (!video || !video.srcObject) {
+        console.warn("Fluxo de vídeo não encontrado para gravar.");
+        return;
+      }
+
+      // Captura o stream de mídia local da tag de vídeo
+      const stream = video.srcObject;
+      recordedChunks = [];
+
+      // Seleciona codec de maior compatibilidade suportado pelo navegador
+      let options = { mimeType: 'video/webm;codecs=vp9,opus' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/webm;codecs=vp8,opus' };
+      }
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/webm' };
+      }
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: '' }; // Fallback padrão
+      }
+
+      try {
+        mediaRecorder = new MediaRecorder(stream, options);
+      } catch (err) {
+        console.error("Falha ao inicializar o MediaRecorder:", err);
+        alert("Seu navegador não suporta gravação de mídia direta.");
+        return;
+      }
+
+      // Coleta os blocos de vídeo gravados à medida que chegam
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          recordedChunks.push(event.data);
+        }
+      };
+
+      // Executa quando a gravação é finalizada (Gera e baixa o arquivo)
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        
+        // Cria link temporário invisível para download do vídeo
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        
+        // Formata a data para nomear o arquivo
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        
+        a.download = `dji_flight_${year}-${month}-${day}_${hours}-${minutes}-${seconds}.webm`;
+        
+        document.body.appendChild(a);
+        a.click();
+        
+        // Limpeza suave de memória
+        setTimeout(() => {
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        }, 100);
+        
+        console.log("✔ Gravação salva localmente e enviada para download!");
+      };
+
+      // Inicia a gravação capturando blocos a cada 1 segundo
+      mediaRecorder.start(1000);
+      isRecording = true;
+      recordSeconds = 0;
+      
+      // Atualiza estado visual do HUD e botão de Gravação
+      updateRecordingTimerUI();
+      recordTimerInterval = setInterval(() => {
+        recordSeconds++;
+        updateRecordingTimerUI();
+      }, 1000);
+
+      // Efeitos de Gravação Ativos (REC piscando e Borda Vermelha)
+      document.getElementById("btn-record").style.borderColor = "var(--danger)";
+      document.getElementById("btn-record").style.boxShadow = "0 0 12px rgba(239, 68, 68, 0.4)";
+      document.getElementById("record-icon").classList.add("pulsating-text");
+      document.getElementById("record-timer").style.display = "block";
+      document.getElementById("hud-recording-badge").style.display = "flex";
+
+      console.log("⏺ Gravação local iniciada!");
+    }
+
+    function stopRecording() {
+      if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+
+      mediaRecorder.stop();
+      isRecording = false;
+
+      // Limpa os cronômetros
+      clearInterval(recordTimerInterval);
+
+      // Restaura estilos de UI padrão
+      document.getElementById("btn-record").style.borderColor = "var(--border-color)";
+      document.getElementById("btn-record").style.boxShadow = "none";
+      document.getElementById("record-icon").classList.remove("pulsating-text");
+      document.getElementById("record-timer").style.display = "none";
+      document.getElementById("hud-recording-badge").style.display = "none";
+
+      console.log("🛑 Gravação local finalizada!");
+    }
+
+    function updateRecordingTimerUI() {
+      const minutes = Math.floor(recordSeconds / 60).toString().padStart(2, '0');
+      const seconds = (recordSeconds % 60).toString().padStart(2, '0');
+      const timeStr = `${minutes}:${seconds}`;
+      
+      document.getElementById("record-timer").textContent = timeStr;
+      document.getElementById("hud-record-timer").textContent = timeStr;
     }
 
     // Recarregar stream manualmente (força uma verificação de UI instantânea)
@@ -1352,19 +1567,16 @@
 
     // Alternar abas
     function switchTab(evt, tabId) {
-      // Esconder todos os painéis de abas
       const tabPanes = document.getElementsByClassName("tab-pane");
       for (let i = 0; i < tabPanes.length; i++) {
         tabPanes[i].classList.remove("active");
       }
 
-      // Remover classe active de todos os botões
       const tabBtns = document.getElementsByClassName("tab-btn");
       for (let i = 0; i < tabBtns.length; i++) {
         tabBtns[i].classList.remove("active");
       }
 
-      // Mostrar aba ativa
       document.getElementById(tabId).classList.add("active");
       evt.currentTarget.classList.add("active");
     }
